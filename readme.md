@@ -30,13 +30,8 @@ The dataset details:
   version = project.version(3)
   dataset = version.download("yolov5")
 
-Image Count: 270 images
-
-Training Set: 70% (190 images)
-Validation Set: 20% (54 images)
-Test Set: 10% (26 images)
-Performance: The model achieves a precision rate of 91.3%.
-
-The dataset is utilized in the train.py file for training the model.
-
-The dataset is utilized in the train.py file for training the model.
+- **Image Count**: 270 images
+  - **Training Set**: 70% (190 images)
+  - **Validation Set**: 20% (54 images)
+  - **Test Set**: 10% (26 images)
+- **Performance**: The model achieves a precision rate of 91.3%.
