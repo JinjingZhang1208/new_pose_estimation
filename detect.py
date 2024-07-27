@@ -11,25 +11,10 @@ from playsound import playsound
 import pygame
 import csv
 import math
+from sound import speak
 
 screenshot_dir = 'captured_images'
 csv_file = 'latency_log.csv'
-
-def speak(text):
-    tts = gTTS(text=text, lang='en')
-    temp_file = "temp.mp3"
-    tts.save(temp_file)
-    
-    if os.path.exists(temp_file):
-        pygame.mixer.init()
-        pygame.mixer.music.load(temp_file)
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
-        pygame.mixer.quit() 
-        os.remove(temp_file)
-    else:
-        print(f"Error: The file {temp_file} was not created.")
 
 def write_latency_to_csv(latency, csv_file):
     with open(csv_file, mode='a', newline='') as file:

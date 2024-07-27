@@ -5,7 +5,7 @@ rf = Roboflow(api_key="eW43mQoE4D7QBLaccpat")
 
 # Access the project and version
 project = rf.workspace("annazhang1208").project("vr_pose_avatars")
-version = project.version(2)
+version = project.version(3)
 
 # Download the dataset in YOLO format
 dataset = version.download("yolov5")
