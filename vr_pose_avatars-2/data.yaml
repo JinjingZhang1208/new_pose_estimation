@@ -1,0 +1,13 @@
+names:
+- human
+- slider
+nc: 2
+roboflow:
+  license: CC BY 4.0
+  project: vr_pose_avatars
+  url: https://universe.roboflow.com/annazhang1208/vr_pose_avatars/dataset/2
+  version: 2
+  workspace: annazhang1208
+test: ../test/images
+train: vr_pose_avatars-2/train/images
+val: vr_pose_avatars-2/valid/images
