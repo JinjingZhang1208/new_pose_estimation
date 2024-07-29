@@ -49,5 +49,5 @@ The dataset details:
 - **Alert System**: If a waving gesture is detected, the system announces it but only once within a minute to avoid repetitive alerts.
 
 ## Testing
-- **Test Videos Link**: [Test Videos] (https://drive.google.com/drive/folders/1Yzg_5M9AbSPTwzvRbJxnrLFyrRXpfhAf?usp=sharing)
+- **Test Videos Link**: [Test Videos](https://drive.google.com/drive/folders/1Yzg_5M9AbSPTwzvRbJxnrLFyrRXpfhAf?usp=sharing)
 - Tested with 15 pre-recorded videos in VR Chat's different worlds with different avatars waving.
