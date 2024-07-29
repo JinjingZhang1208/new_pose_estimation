@@ -4,14 +4,78 @@ import time
 import shutil
 import mediapipe as mp
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from ultralytics import YOLO
-from gtts import gTTS
-from playsound import playsound
-import pygame
 import csv
 import math
 from sound import speak
+
+# Initialize MediaPipe Pose model
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose()
+
+def extract_keypoints(image):
+    """Extract keypoints from an image using MediaPipe Pose."""
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = pose.process(image_rgb)
+    if results.pose_landmarks:
+        return [landmark for landmark in results.pose_landmarks.landmark]
+    return []
+
+def preprocess_keypoints(keypoints):
+    """Normalize and flatten keypoints."""
+    keypoints_array = np.array([(kp.x, kp.y, kp.z) for kp in keypoints])
+    keypoints_array = (keypoints_array - np.min(keypoints_array, axis=0)) / (np.ptp(keypoints_array, axis=0) + 1e-6)
+    return keypoints_array.flatten()
+
+def process_folder(folder_path, label):
+    """Process all images in a folder, extract keypoints, and assign labels."""
+    keypoints_data = []
+    labels = []
+    for filename in os.listdir(folder_path):
+        if filename.endswith(".jpg") or filename.endswith(".png"):
+            image_path = os.path.join(folder_path, filename)
+            image = cv2.imread(image_path)
+            keypoints = extract_keypoints(image)
+            if keypoints:
+                features = preprocess_keypoints(keypoints)
+                keypoints_data.append(features)
+                labels.append(label)
+    return keypoints_data, labels
+
+wave_folder = 'wave_frames'
+not_wave_folder = 'not_wave_images'
+
+# Process both folders
+wave_data, wave_labels = process_folder(wave_folder, 'wave')
+not_wave_data, not_wave_labels = process_folder(not_wave_folder, 'not_wave')
+
+# Combine data and labels
+keypoints_data = wave_data + not_wave_data
+labels = wave_labels + not_wave_labels
+
+# Convert to numpy arrays
+X = np.array(keypoints_data)
+y = np.array(labels)
+
+# Split data into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Standardize features
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Initialize and train the SVM model
+clf = SVC(kernel='linear')
+clf.fit(X_train, y_train)
+
+# Evaluate the model
+accuracy = clf.score(X_test, y_test)
+print(f"Model accuracy: {accuracy:.2f}")
 
 screenshot_dir = 'captured_images'
 csv_file = 'latency_log.csv'
@@ -20,7 +84,6 @@ def write_latency_to_csv(latency, csv_file):
     with open(csv_file, mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow([datetime.now().isoformat(), latency])
-
 
 def clear_images_directory(directory):
     if os.path.exists(directory):
@@ -35,55 +98,19 @@ model_path = 'C:/Users/andyma/Documents/vrchat_pose_detection/train_datasets/yol
 model = YOLO(model_path)
 
 # Initialize Mediapipe Pose
-mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
 processed_images = set()
 last_movement_time = datetime.now()
 movement_detected = False
+last_wave_detection_time = datetime.min
 
-def calculate_angle(a, b, c):
-    """Calculate the angle between three points (a, b, c)"""
-    # Vector AB
-    ab = [b.x - a.x, b.y - a.y]
-    # Vector BC
-    bc = [c.x - b.x, c.y - b.y]
-    
-    # Dot product
-    dot_product = ab[0] * bc[0] + ab[1] * bc[1]
-    
-    # Magnitudes
-    magnitude_ab = math.sqrt(ab[0] ** 2 + ab[1] ** 2)
-    magnitude_bc = math.sqrt(bc[0] ** 2 + bc[1] ** 2)
-    
-    # Angle in radians
-    angle_rad = math.acos(dot_product / (magnitude_ab * magnitude_bc))
-    # Convert to degrees
-    angle_deg = math.degrees(angle_rad)
-    
-    return angle_deg
-
-def is_waving(landmarks):
-    left_elbow = landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value]
-    left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
-    left_wrist = landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value]
-    right_elbow = landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value]
-    right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
-    right_wrist = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value]
-    
-    # Calculate angles
-    left_arm_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
-    right_arm_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
-    
-    # Define thresholds for waving
-    LEFT_WAVE_ANGLE_RANGE = (30, 90)  
-    RIGHT_WAVE_ANGLE_RANGE = (30, 90) 
-    
-    # Check if either arm is in the waving angle range
-    left_wave = LEFT_WAVE_ANGLE_RANGE[0] <= left_arm_angle <= LEFT_WAVE_ANGLE_RANGE[1]
-    right_wave = RIGHT_WAVE_ANGLE_RANGE[0] <= right_arm_angle <= RIGHT_WAVE_ANGLE_RANGE[1]
-    
-    return left_wave or right_wave
+def is_waving_with_svm(keypoints):
+    """Predict if the keypoints correspond to a waving gesture using SVM."""
+    features = preprocess_keypoints(keypoints)
+    features = scaler.transform([features])
+    prediction = clf.predict(features)
+    return prediction[0] == 'wave'
 
 def draw_text_with_background(image, text, position, font, scale, text_color, bg_color, thickness):
     (text_w, text_h), baseline = cv2.getTextSize(text, font, scale, thickness)
@@ -92,7 +119,7 @@ def draw_text_with_background(image, text, position, font, scale, text_color, bg
     cv2.putText(image, text, (x, y), font, scale, text_color, thickness, cv2.LINE_AA)
 
 def monitor_images(screenshot_dir):
-    global last_movement_time, movement_detected
+    global last_movement_time, movement_detected, last_wave_detection_time
     with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
         try:
             while True:
@@ -119,7 +146,6 @@ def monitor_images(screenshot_dir):
                     detections = yolo_results.boxes  # Accessing boxes from YOLOv8 results
                     
                     for box in detections:
-                        # Ensure the coordinates are converted to integers
                         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
                         conf = box.conf[0].item()
                         cls = int(box.cls[0].item())
@@ -134,23 +160,22 @@ def monitor_images(screenshot_dir):
                         # Make Mediapipe detection
                         results = pose.process(image_rgb)  
                     
-                    # Recolor back to BGR
                     image_rgb.flags.writeable = True
                     image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
                     
-                    # Extract landmarks
                     try:
                         landmarks = results.pose_landmarks.landmark if results.pose_landmarks else None
                         if landmarks:
-                            if is_waving(landmarks):
-                                end_time = time.time()
-                                draw_text_with_background(image, 'Wave Detected!', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), (0, 128, 255), 2)
-                                print("Wave Detected!")
-                                speak("Wave Detected!")
-                                latency = end_time - start_time
-                                last_movement_time = datetime.now()
-                                movement_detected = True
-                                write_latency_to_csv(latency, csv_file)
+                            if is_waving_with_svm(landmarks):
+                                current_time = datetime.now()
+                                if current_time - last_wave_detection_time > timedelta(minutes=1):
+                                    end_time = time.time()
+                                    draw_text_with_background(image, 'Wave Detected!', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), (0, 128, 255), 2)
+                                    print("Wave Detected!")
+                                    speak("Wave Detected!")
+                                    latency = end_time - start_time
+                                    last_wave_detection_time = current_time  # MAKE SURE THAT THE SOUND ONLY APPEARS ONCE WITHIN ONE MINUTE
+                                    write_latency_to_csv(latency, csv_file)
         
                         if results.pose_landmarks:
                             mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
@@ -169,6 +194,4 @@ def monitor_images(screenshot_dir):
             print("Exiting program.")
         
         finally:
-            # Clean up
             cv2.destroyAllWindows()
-            clear_images_directory(screenshot_dir)
