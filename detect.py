@@ -5,78 +5,32 @@ import shutil
 import mediapipe as mp
 import numpy as np
 from datetime import datetime, timedelta
-from sklearn.svm import SVC
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 from ultralytics import YOLO
 import csv
-import math
 from sound import speak
+from mediapipe_utils import extract_keypoints
+from yolo_utils import load_yolo_model, perform_yolo_inference
+from svm_model import train_svm_model, load_model, is_waving_with_svm, save_model
 
 # Initialize MediaPipe Pose model
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
 
-def extract_keypoints(image):
-    """Extract keypoints from an image using MediaPipe Pose."""
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = pose.process(image_rgb)
-    if results.pose_landmarks:
-        return [landmark for landmark in results.pose_landmarks.landmark]
-    return []
-
-def preprocess_keypoints(keypoints):
-    """Normalize and flatten keypoints."""
-    keypoints_array = np.array([(kp.x, kp.y, kp.z) for kp in keypoints])
-    keypoints_array = (keypoints_array - np.min(keypoints_array, axis=0)) / (np.ptp(keypoints_array, axis=0) + 1e-6)
-    return keypoints_array.flatten()
-
-def process_folder(folder_path, label):
-    """Process all images in a folder, extract keypoints, and assign labels."""
-    keypoints_data = []
-    labels = []
-    for filename in os.listdir(folder_path):
-        if filename.endswith(".jpg") or filename.endswith(".png"):
-            image_path = os.path.join(folder_path, filename)
-            image = cv2.imread(image_path)
-            keypoints = extract_keypoints(image)
-            if keypoints:
-                features = preprocess_keypoints(keypoints)
-                keypoints_data.append(features)
-                labels.append(label)
-    return keypoints_data, labels
-
+# Paths to image folders
 wave_folder = 'wave_frames'
 not_wave_folder = 'not_wave_images'
 
-# Process both folders
-wave_data, wave_labels = process_folder(wave_folder, 'wave')
-not_wave_data, not_wave_labels = process_folder(not_wave_folder, 'not_wave')
+# Train the SVM model (or load a pre-trained model)
+model_path = 'svm_model.pkl'
+scaler_path = 'scaler.pkl'
 
-# Combine data and labels
-keypoints_data = wave_data + not_wave_data
-labels = wave_labels + not_wave_labels
+if not os.path.exists(model_path) or not os.path.exists(scaler_path):
+    clf, scaler = train_svm_model(wave_folder, not_wave_folder, extract_keypoints)
+    save_model(clf, scaler, model_path, scaler_path)
+else:
+    clf, scaler = load_model(model_path, scaler_path)
 
-# Convert to numpy arrays
-X = np.array(keypoints_data)
-y = np.array(labels)
-
-# Split data into training and test sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Standardize features
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
-
-# Initialize and train the SVM model
-clf = SVC(kernel='linear')
-clf.fit(X_train, y_train)
-
-# Evaluate the model
-accuracy = clf.score(X_test, y_test)
-print(f"Model accuracy: {accuracy:.2f}")
-
+# Directory and file paths
 screenshot_dir = 'captured_images'
 csv_file = 'latency_log.csv'
 
@@ -94,23 +48,15 @@ def clear_images_directory(directory):
 clear_images_directory(screenshot_dir)
 
 # Load YOLO model
-model_path = 'C:/Users/andyma/Documents/vrchat_pose_detection/train_datasets/yolov8n.pt'
-model = YOLO(model_path)
+model = load_yolo_model()
 
-# Initialize Mediapipe Pose
+# Initialize MediaPipe Pose
 mp_drawing = mp.solutions.drawing_utils
 
 processed_images = set()
 last_movement_time = datetime.now()
 movement_detected = False
 last_wave_detection_time = datetime.min
-
-def is_waving_with_svm(keypoints):
-    """Predict if the keypoints correspond to a waving gesture using SVM."""
-    features = preprocess_keypoints(keypoints)
-    features = scaler.transform([features])
-    prediction = clf.predict(features)
-    return prediction[0] == 'wave'
 
 def draw_text_with_background(image, text, position, font, scale, text_color, bg_color, thickness):
     (text_w, text_h), baseline = cv2.getTextSize(text, font, scale, thickness)
@@ -142,14 +88,13 @@ def monitor_images(screenshot_dir):
                     start_time = time.time()
 
                     # Perform YOLO inference
-                    yolo_results = model(frame)[0]
-                    detections = yolo_results.boxes  # Accessing boxes from YOLOv8 results
+                    detections, yolo_results_names = perform_yolo_inference(model, frame)
                     
                     for box in detections:
                         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
                         conf = box.conf[0].item()
                         cls = int(box.cls[0].item())
-                        label = yolo_results.names[cls]
+                        label = yolo_results_names[cls]
 
                         cropped_frame = frame[y1:y2, x1:x2]
 
@@ -166,15 +111,15 @@ def monitor_images(screenshot_dir):
                     try:
                         landmarks = results.pose_landmarks.landmark if results.pose_landmarks else None
                         if landmarks:
-                            if is_waving_with_svm(landmarks):
+                            if is_waving_with_svm(landmarks, clf, scaler):
                                 current_time = datetime.now()
                                 if current_time - last_wave_detection_time > timedelta(minutes=1):
                                     end_time = time.time()
                                     draw_text_with_background(image, 'Wave Detected!', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), (0, 128, 255), 2)
                                     print("Wave Detected!")
-                                    speak("Wave Detected!")
+                                    speak("Hello, my friend!")
                                     latency = end_time - start_time
-                                    last_wave_detection_time = current_time  # MAKE SURE THAT THE SOUND ONLY APPEARS ONCE WITHIN ONE MINUTE
+                                    last_wave_detection_time = current_time  # Ensure the sound only appears once within one minute
                                     write_latency_to_csv(latency, csv_file)
         
                         if results.pose_landmarks:
