@@ -35,7 +35,7 @@ The dataset details:
 - **Video Count**: 16 videos
 - **Feature Extracted**: 5480
 - **Performance**: The model achieves an accurancy rate of 65%.
-- 
+  
 ## Methodology
 
 ### YOLOv8 for Object Detection
