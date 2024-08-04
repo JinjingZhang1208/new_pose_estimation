@@ -14,7 +14,7 @@ This project involves:
 
 ## Dataset
 
-The dataset for this project is hosted on Roboflow and includes:
+The dataset for training the YOLO model is hosted on Roboflow and includes:
 
 - **Roboflow Link**: [Roboflow Project](https://app.roboflow.com)
 - **API Key**: `"eW43mQoE4D7QBLaccpat"`
@@ -27,6 +27,15 @@ The dataset details:
   - **Test Set**: 10% (26 images)
 - **Performance**: The model achieves a precision rate of 91.3%.
 
+The dataset for training the SVM model is uploaded to Google Drive: 
+- **Download Link**：[Google Drive Link](https://drive.google.com/drive/folders/1m3Aj9Ez3TlIpfplZsnzc0y3-b6G8__zB?usp=drive_link)
+
+The dataset details:
+- **Image Count**: 195 images
+- **Video Count**: 16 videos
+- **Feature Extracted**: 5480
+- **Performance**: The model achieves an accurancy rate of 65%.
+- 
 ## Methodology
 
 ### YOLOv8 for Object Detection
